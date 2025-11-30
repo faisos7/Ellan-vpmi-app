@@ -22,7 +22,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 정기배송 v.4.7")
+            st.title("🔒 엘랑비탈 정기배송 v.4.7.1")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -119,7 +119,7 @@ def init_session_state():
 init_session_state()
 
 # 4. 계산기 모드
-st.title("🏥 엘랑비탈 정기배송 v.4.7")
+st.title("🏥 엘랑비탈 정기배송 v.4.7.1")
 col1, col2 = st.columns(2)
 
 # 날짜 변경 시 캘린더 월 자동 동기화
@@ -268,16 +268,19 @@ with t5:
     with col_in1: in_kimchi = st.number_input("무염김치 (봉지)", 0, value=1)
     with col_in2: 
         in_milk_reg = st.number_input("일반커드 우유 (통)", 0, value=16)
+        starter_10 = (in_milk_reg * 2.3) * 0.1
         starter_15 = (in_milk_reg * 2.3) * 0.15
-        oligo_for_cool = starter_15 * 0.028 # 15% 스타터 기준 올리고당 2.8%
+        oligo_for_cool = starter_15 * 0.028 
+        total_starter_input = starter_15 + oligo_for_cool
+
         st.caption(f"🥣 **필요 스타터**")
-        st.caption(f"- 기타 (15%): {starter_15:.1f} kg")
-        st.caption(f"- 냉동 시원한것 사용 시:")
-        st.caption(f"  └ 올리고당 {oligo_for_cool:.3f} kg 추가")
+        st.caption(f"- 마시는것/대파 (10%): {starter_10:.1f} kg")
+        st.caption(f"- 냉동 시원한것 (15%):")
+        st.caption(f"  └ 원액 {starter_15:.1f}kg + 올리고당 {oligo_for_cool:.3f}kg")
+        st.caption(f"  └ **총 투입량: {total_starter_input:.2f} kg**")
 
     with col_in3: 
         in_milk_egg = st.number_input("계란커드 우유 (통)", 0, value=0)
-        # [수정] 명칭 변경
         egg_starter_pct = st.number_input("(개망초/아카시아) 스타터 투입비 (%)", 0, 100, 25)
     
     prod_cool_cnt = in_kimchi * 215 
@@ -299,8 +302,6 @@ with t5:
     total_mix_kg = prod_reg_curd_kg + req_cool_for_curd
     mix_cnt = int(total_mix_kg * 1000 / 260)
     
-    # [수정] 시원한것 잔여량에서 계란커드용(이제는 개망초라 0임) 제외
-    # req_cool_for_egg = 0 (개망초로 대체되었으므로)
     remain_cool_kg = prod_cool_kg - req_cool_for_curd
     remain_cool_cnt = int(remain_cool_kg * 1000 / 274)
 
@@ -312,8 +313,8 @@ with t5:
         st.metric("총 중량", f"{prod_cool_kg:.1f} kg")
         st.caption(f"무염김치 {in_kimchi}봉 기준")
     with c_mid2:
-        st.warning("🥣 **중간 투입 (소모)**")
-        st.write(f"- 커드 혼합용: **{req_cool_for_curd:.1f} kg**")
+        st.warning("🥣 **중간 투입 (소모) 시원한 것**")
+        st.metric("소모량", f"{req_cool_for_curd:.1f} kg")
         st.caption(f"※ 일반커드: {prod_reg_curd_kg:.1f} kg")
     with c_mid3:
         st.success("🥚 **계란 커드 (재료 계산)**")
@@ -370,7 +371,7 @@ with t6:
         with st.expander("➕ 일정 추가하기"):
             with st.form(f"add_sched_{sel_month}"):
                 new_task = st.text_input("추가할 내용")
-                if st.form_submit_button("등록"):
+                if st.form_submit_button("추가"):
                     if new_task:
                         st.session_state.schedule_db[sel_month]['main'].append(new_task)
                         st.rerun()
