@@ -20,7 +20,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 정기배송 v.4.4.1")
+            st.title("🔒 엘랑비탈 정기배송 v.4.4.2")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -35,21 +35,19 @@ def add_patient(db, name, group, note, default, items):
     db[name] = {"group": group, "note": note, "default": default, "items": items}
 
 def init_session_state():
-    # (0) 한국 시간(KST) 설정
+    # (0) 한국 시간(KST)
     KST = timezone(timedelta(hours=9))
-    
-    # (1) 날짜 초기화 (한국 시간 기준)
     if 'target_date' not in st.session_state:
         st.session_state.target_date = datetime.now(KST)
     
-    # (2) 연간 일정 DB
+    # (1) 연간 일정 DB (5월 계란커드 스타터 추가)
     if 'schedule_db' not in st.session_state:
         st.session_state.schedule_db = {
             1: {"title": "1월 (JAN)", "main": ["동백꽃 (대사/필터링)", "인삼사이다 (병입)", "유기농 우유 커드"], "note": "동백꽃 pH 3.8~4.0 도달 시 종료"},
             2: {"title": "2월 (FEB)", "main": ["갈대뿌리 (채취/건조/대사)", "당근 (대사)"], "note": "갈대뿌리 세척 후 건조 수율 약 37%"},
             3: {"title": "3월 (MAR)", "main": ["봄꽃 대사 (장미, 프리지아, 카네이션 등)", "표고버섯", "커피콩(실험)"], "note": "꽃:줄기 비율 1:1 테스트"},
             4: {"title": "4월 (APR)", "main": ["애기똥풀 (채취 시작)", "등나무꽃", "머위", "산마늘"], "note": "애기똥풀 전초 사용"},
-            5: {"title": "5월 (MAY)", "main": ["아카시아꽃 (대량 생산)", "뽕잎 (채취/세척)", "구찌뽕", "상추"], "note": "아카시아 꽃 1:2~1:4 비율"},
+            5: {"title": "5월 (MAY)", "main": ["개망초꽃+아카시아잎 합제 대사 (계란커드용 8:1)", "아카시아꽃 (대량 생산)", "뽕잎", "구찌뽕"], "note": "계란커드 스타터용 합제 대사 시작"},
             6: {"title": "6월 (JUN)", "main": ["매실 (청 제조)", "개망초 (채취/대사)", "완두콩"], "note": "매실 씨 제거 후 으깨거나 채썰기"},
             7: {"title": "7월 (JUL)", "main": ["연꽃 / 연잎", "무궁화", "목백일홍", "풋고추"], "note": "여름철 대사 속도 빠름 주의"},
             8: {"title": "8월 (AUG)", "main": ["풋사과 (대사)", "각종 대사체 필터링/소포장"], "note": "풋사과 1:6 비율"},
@@ -59,7 +57,7 @@ def init_session_state():
             12: {"title": "12월 (DEC)", "main": ["동백꽃 (채취 시작)", "메주콩(백태)", "한 해 마감"], "note": "동백꽃 1:6, 1:9, 1:12 비율 실험"}
         }
     
-    # (3) 뷰 모드
+    # (2) 뷰 모드
     if 'view_month' not in st.session_state:
         st.session_state.view_month = st.session_state.target_date.month
 
@@ -69,7 +67,7 @@ def init_session_state():
             "인삼대사체(PAGI) 항암용", "인삼대사체(PAGI) 뇌질환용",
             "표고버섯 대사체", "개망초(EDF)", "장미꽃 대사체",
             "애기똥풀 대사체", "인삼 사이다", "송이 대사체",
-            "PAGI 희석액", "Vitamin C", "SiO2",
+            "PAGI 희석액", "Vitamin C", "SiO2", "계란커드 스타터",
             "혼합 [E.R.P.V.P]", "혼합 [P.V.E]", "혼합 [P.P.E]",
             "혼합 [Ex.P]", "혼합 [R.P]", "혼합 [Edf.P]", "혼합 [P.P]"
         ]
@@ -106,6 +104,10 @@ def init_session_state():
 
     if 'recipe_db' not in st.session_state:
         r_db = {}
+        # [추가] 계란커드 스타터 레시피
+        r_db["계란커드 스타터 [혼합]"] = {"desc": "대사체 단순 혼합", "batch_size": 9, "materials": {"개망초 대사체": 8, "아카시아잎 대사체": 1}}
+        r_db["계란커드 스타터 [합제]"] = {"desc": "원물 8:1 혼합 대사 (내년 5월~)", "batch_size": 9, "materials": {"개망초꽃(원물)": 8, "아카시아잎(원물)": 1, "EX": 36}}
+        
         r_db["혼합 [E.R.P.V.P]"] = {"desc": "6배수 혼합/14병", "batch_size": 14, "materials": {"인삼대사체(PAGI) 항암용 (50ml)": 12, "송이대사체 (50ml)": 6, "장미꽃 대사체 (50ml)": 6, "Vitamin C (3000mg)": 14, "SiO2 (1ml)": 14, "EX": 900}}
         r_db["혼합 [P.V.E]"] = {"desc": "1:1 개별 채움", "batch_size": 1, "materials": {"인삼대사체(PAGI) 항암용 (50ml)": 1, "Vitamin C (3000mg)": 1, "EX": 100}}
         r_db["혼합 [P.P.E]"] = {"desc": "1:1 개별 채움", "batch_size": 1, "materials": {"송이대사체 (50ml)": 1, "인삼대사체(PAGI) 항암용 (50ml)": 1, "EX": 50}}
@@ -118,11 +120,8 @@ def init_session_state():
 init_session_state()
 
 # 4. 계산기 모드
-st.title("🏥 엘랑비탈 정기배송 v.4.4.1")
+st.title("🏥 엘랑비탈 정기배송 v.4.4.2")
 col1, col2 = st.columns(2)
-
-# [수정] 한국 시간(KST) 적용
-KST = timezone(timedelta(hours=9))
 
 # [수정] 날짜 변경 시 캘린더 월 자동 동기화 함수
 def on_date_change():
@@ -294,89 +293,3 @@ with t5:
     with c_mid1:
         st.info("🥬 **시원한 것 (총생산)**")
         st.metric("총 중량", f"{prod_cool_kg:.1f} kg")
-        st.caption(f"무염김치 {in_kimchi}봉 기준")
-    with c_mid2:
-        st.warning("🥣 **중간 투입 (소모)**")
-        st.write(f"- 커드 혼합용: **{req_cool_for_curd:.1f} kg**")
-        st.write(f"- 계란커드용: **{req_cool_for_egg:.1f} kg**")
-        st.caption(f"※ 일반커드: {prod_reg_curd_kg:.1f} kg")
-    with c_mid3:
-        st.success("🥚 **계란 커드 (재료 계산)**")
-        st.write(f"- 우유: **{total_milk_egg_kg:.1f} kg** ({in_milk_egg}통)")
-        st.write(f"- 계란: **{req_egg_kg:.1f} kg** (약 {req_egg_cnt}개)")
-        st.write(f"- 시원한 것: **{req_cool_for_egg:.1f} kg** (투입됨)")
-    st.markdown("---")
-    st.markdown("#### 3️⃣ 최종 완제품 (Final Count)")
-    c_fin1, c_fin2, c_fin3 = st.columns(3)
-    with c_fin1:
-        st.info("🧴 **시원한 것 (최종 잔여)**")
-        if remain_cool_kg < 0:
-            st.metric("상태", "🚨 재료 부족")
-            st.error(f"{abs(remain_cool_kg):.1f} kg 부족합니다!")
-        else:
-            st.metric("생산 수량 (274g)", f"{remain_cool_cnt} 병")
-            st.caption(f"잔여 {remain_cool_kg:.1f} kg")
-    with c_fin2:
-        st.error("🥣 **커드 시원한 것**")
-        st.metric("생산 수량 (260g)", f"{mix_cnt} 병")
-        st.caption(f"총 {total_mix_kg:.1f} kg")
-    with c_fin3:
-        st.warning("🥚 **계란 커드**")
-        st.metric("생산 수량 (150g)", f"{prod_egg_curd_cnt} 개")
-        st.caption(f"총 {prod_egg_curd_kg:.1f} kg")
-
-# [v.4.4] Tab 6: 연간 일정 (UI 개선)
-with t6:
-    st.header(f"🗓️ 연간 생산 캘린더 ({st.session_state.view_month}월)")
-    
-    sel_month = st.selectbox("월 선택", list(range(1, 13)), key="view_month")
-    
-    current_sched = st.session_state.schedule_db[sel_month]
-    
-    # [수정] 내용 먼저 보기 (가독성 향상)
-    st.subheader(f"📌 {current_sched['title']}")
-    
-    col_main, col_note = st.columns([2, 1])
-    
-    with col_main:
-        st.success("🌱 **주요 생산 품목**")
-        if not current_sched['main']:
-            st.write("(등록된 일정이 없습니다)")
-        else:
-            for item in current_sched['main']:
-                st.markdown(f"✅ {item}")
-                
-    with col_note:
-        st.info("💡 **비고 / 주의사항**")
-        st.write(current_sched['note'])
-
-    st.divider()
-    
-    # [수정] 관리 도구 하단 배치 (접이식)
-    with st.expander("⚙️ 일정 관리 도구 (추가/삭제/수정)", expanded=False):
-        m1, m2, m3 = st.columns(3)
-        
-        with m1:
-            st.markdown("#### 🗑️ 일정 삭제")
-            to_remove = st.multiselect("삭제할 항목 선택", current_sched['main'])
-            if st.button("선택 항목 삭제", type="secondary"):
-                for item in to_remove:
-                    st.session_state.schedule_db[sel_month]['main'].remove(item)
-                st.rerun()
-        
-        with m2:
-            st.markdown("#### ➕ 일정 추가")
-            with st.form(f"add_sched_{sel_month}"):
-                new_task = st.text_input("내용 입력")
-                if st.form_submit_button("추가"):
-                    if new_task:
-                        st.session_state.schedule_db[sel_month]['main'].append(new_task)
-                        st.rerun()
-        
-        with m3:
-            st.markdown("#### 📝 비고 수정")
-            with st.form(f"edit_note_{sel_month}"):
-                new_note = st.text_area("내용 수정", value=current_sched['note'])
-                if st.form_submit_button("저장"):
-                    st.session_state.schedule_db[sel_month]['note'] = new_note
-                    st.rerun()
