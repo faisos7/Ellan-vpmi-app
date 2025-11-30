@@ -1,7 +1,8 @@
+%%writefile app.py
 import streamlit as st
 import pandas as pd
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # 1. 페이지 설정
 st.set_page_config(page_title="엘랑비탈 정기배송", page_icon="🏥", layout="wide")
@@ -19,7 +20,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 정기배송 v.4.3.2")
+            st.title("🔒 엘랑비탈 정기배송 v.4.4.1")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -34,7 +35,14 @@ def add_patient(db, name, group, note, default, items):
     db[name] = {"group": group, "note": note, "default": default, "items": items}
 
 def init_session_state():
-    # (1) 연간 일정 DB (세션 저장)
+    # (0) 한국 시간(KST) 설정
+    KST = timezone(timedelta(hours=9))
+    
+    # (1) 날짜 초기화 (한국 시간 기준)
+    if 'target_date' not in st.session_state:
+        st.session_state.target_date = datetime.now(KST)
+    
+    # (2) 연간 일정 DB
     if 'schedule_db' not in st.session_state:
         st.session_state.schedule_db = {
             1: {"title": "1월 (JAN)", "main": ["동백꽃 (대사/필터링)", "인삼사이다 (병입)", "유기농 우유 커드"], "note": "동백꽃 pH 3.8~4.0 도달 시 종료"},
@@ -51,9 +59,9 @@ def init_session_state():
             12: {"title": "12월 (DEC)", "main": ["동백꽃 (채취 시작)", "메주콩(백태)", "한 해 마감"], "note": "동백꽃 1:6, 1:9, 1:12 비율 실험"}
         }
     
-    # (2) 뷰 모드
+    # (3) 뷰 모드
     if 'view_month' not in st.session_state:
-        st.session_state.view_month = st.session_state.target_date.month if 'target_date' in st.session_state else datetime.now().month
+        st.session_state.view_month = st.session_state.target_date.month
 
     if 'product_list' not in st.session_state:
         plist = [
@@ -71,7 +79,7 @@ def init_session_state():
         db = {}
         # -- 남양주 --
         items = [{"제품": "시원한 것", "용량": "280ml", "수량": 21}, {"제품": "커드 시원한 것", "용량": "280ml", "수량": 14}, {"제품": "EX", "용량": "280ml", "수량": 3}, {"제품": "인삼대사체(PAGI) 항암용", "용량": "50ml", "수량": 7, "비고": "원액"}, {"제품": "표고버섯 대사체", "용량": "50ml", "수량": 7}]
-        add_patient(db, "남양주 1", "남양주", "⚠️ 신장 투석", False, items)
+        add_patient(db, "남양주 1", "남양주", "매주 발송", True, items)
 
         items = [{"제품": "마시는 것", "용량": "280ml", "수량": 14}, {"제품": "시원한 것", "용량": "280ml", "수량": 14}, {"제품": "커드 시원한 것", "용량": "280ml", "수량": 14}, {"제품": "커드", "용량": "150ml", "수량": 7}, {"제품": "인삼대사체(PAGI) 항암용", "용량": "50ml", "수량": 14}, {"제품": "개망초(EDF)", "용량": "50ml", "수량": 7}, {"제품": "장미꽃 대사체", "용량": "50ml", "수량": 3}]
         add_patient(db, "남양주 2", "남양주", "매주 발송", True, items)
@@ -104,23 +112,26 @@ def init_session_state():
         r_db["혼합 [Ex.P]"] = {"desc": "1:1 개별 채움", "batch_size": 1, "materials": {"인삼대사체(PAGI) 항암용 (50ml)": 1, "EX": 100}}
         r_db["혼합 [R.P]"] = {"desc": "1:1 개별 채움", "batch_size": 1, "materials": {"장미꽃 대사체 (50ml)": 1, "인삼대사체(PAGI) 항암용 (50ml)": 1, "인삼사이다": 50}}
         r_db["혼합 [Edf.P]"] = {"desc": "1:1 개별 채움", "batch_size": 1, "materials": {"개망초(EDF) (50ml)": 1, "인삼대사체(PAGI) 항암용 (50ml)": 1, "인삼사이다": 50}}
-        r_db["혼합 [P.P]"] = {"desc": "1:1 개별 채움", "batch_size": 1, "materials": {"송이대사체 (50ml)": 1, "PAGI (50ml)": 1, "EX": 50}}
+        r_db["혼합 [P.P]"] = {"desc": "1:1 개별 채움", "batch_size": 1, "materials": {"송이대사체 (50ml)": 1, "인삼대사체(PAGI) 항암용 (50ml)": 1, "EX": 50}}
         st.session_state.recipe_db = r_db
 
 init_session_state()
 
 # 4. 계산기 모드
-st.title("🏥 엘랑비탈 정기배송 v.4.3.2")
+st.title("🏥 엘랑비탈 정기배송 v.4.4.1")
 col1, col2 = st.columns(2)
+
+# [수정] 한국 시간(KST) 적용
+KST = timezone(timedelta(hours=9))
 
 # [수정] 날짜 변경 시 캘린더 월 자동 동기화 함수
 def on_date_change():
     if 'target_date' in st.session_state:
         st.session_state.view_month = st.session_state.target_date.month
 
-# [수정] 기본값을 오늘(datetime.now())로 설정
+# [수정] 기본값을 오늘(datetime.now(KST))로 설정
 with col1: 
-    target_date = st.date_input("발송일", value=datetime.now(), key="target_date", on_change=on_date_change)
+    target_date = st.date_input("발송일", value=datetime.now(KST), key="target_date", on_change=on_date_change)
 
 # 날짜 기반 주차 계산
 def get_week_info(date_obj):
@@ -265,19 +276,15 @@ with t5:
     prod_cool_cnt = in_kimchi * 215 
     prod_cool_kg = prod_cool_cnt * 0.274 
     prod_reg_curd_kg = in_milk_reg * 2.3 * 0.217 
-    
     total_milk_egg_kg = in_milk_egg * 2.3
     req_egg_kg = total_milk_egg_kg / 4
     req_egg_cnt = int(req_egg_kg / 0.045)
     req_cool_for_egg = total_milk_egg_kg / 4 
-    
     prod_egg_curd_kg = total_milk_egg_kg * 0.22 
     prod_egg_curd_cnt = int(prod_egg_curd_kg * 1000 / 150)
-    
     req_cool_for_curd = prod_reg_curd_kg * 5.5 
     total_mix_kg = prod_reg_curd_kg + req_cool_for_curd
     mix_cnt = int(total_mix_kg * 1000 / 260)
-    
     remain_cool_kg = prod_cool_kg - req_cool_for_curd - req_cool_for_egg
     remain_cool_cnt = int(remain_cool_kg * 1000 / 274)
 
@@ -318,46 +325,58 @@ with t5:
         st.metric("생산 수량 (150g)", f"{prod_egg_curd_cnt} 개")
         st.caption(f"총 {prod_egg_curd_kg:.1f} kg")
 
-# [v.4.3.2] Tab 6: 연간 일정 (수정 가능 & 자동 연동)
+# [v.4.4] Tab 6: 연간 일정 (UI 개선)
 with t6:
     st.header(f"🗓️ 연간 생산 캘린더 ({st.session_state.view_month}월)")
     
-    # 날짜 변경 시 자동 동기화된 값 사용
     sel_month = st.selectbox("월 선택", list(range(1, 13)), key="view_month")
     
     current_sched = st.session_state.schedule_db[sel_month]
     
-    c_main, c_note = st.columns([2, 1])
-    with c_main:
-        st.subheader(f"📌 {current_sched['title']}")
+    # [수정] 내용 먼저 보기 (가독성 향상)
+    st.subheader(f"📌 {current_sched['title']}")
+    
+    col_main, col_note = st.columns([2, 1])
+    
+    with col_main:
         st.success("🌱 **주요 생산 품목**")
+        if not current_sched['main']:
+            st.write("(등록된 일정이 없습니다)")
+        else:
+            for item in current_sched['main']:
+                st.markdown(f"✅ {item}")
+                
+    with col_note:
+        st.info("💡 **비고 / 주의사항**")
+        st.write(current_sched['note'])
+
+    st.divider()
+    
+    # [수정] 관리 도구 하단 배치 (접이식)
+    with st.expander("⚙️ 일정 관리 도구 (추가/삭제/수정)", expanded=False):
+        m1, m2, m3 = st.columns(3)
         
-        # 삭제 기능
-        to_remove = st.multiselect("삭제할 항목 선택", current_sched['main'])
-        if st.button("선택 항목 삭제"):
-            for item in to_remove:
-                st.session_state.schedule_db[sel_month]['main'].remove(item)
-            st.rerun()
-            
-        for item in current_sched['main']:
-            st.write(f"- {item}")
+        with m1:
+            st.markdown("#### 🗑️ 일정 삭제")
+            to_remove = st.multiselect("삭제할 항목 선택", current_sched['main'])
+            if st.button("선택 항목 삭제", type="secondary"):
+                for item in to_remove:
+                    st.session_state.schedule_db[sel_month]['main'].remove(item)
+                st.rerun()
         
-        # 일정 추가 기능
-        with st.expander("➕ 일정 추가하기"):
+        with m2:
+            st.markdown("#### ➕ 일정 추가")
             with st.form(f"add_sched_{sel_month}"):
-                new_task = st.text_input("추가할 내용")
-                if st.form_submit_button("등록"):
+                new_task = st.text_input("내용 입력")
+                if st.form_submit_button("추가"):
                     if new_task:
                         st.session_state.schedule_db[sel_month]['main'].append(new_task)
                         st.rerun()
-
-    with c_note:
-        st.info("💡 **비고 / 주의사항**")
-        st.write(current_sched['note'])
         
-        with st.expander("📝 비고 수정"):
+        with m3:
+            st.markdown("#### 📝 비고 수정")
             with st.form(f"edit_note_{sel_month}"):
                 new_note = st.text_area("내용 수정", value=current_sched['note'])
-                if st.form_submit_button("수정"):
+                if st.form_submit_button("저장"):
                     st.session_state.schedule_db[sel_month]['note'] = new_note
                     st.rerun()
