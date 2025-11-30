@@ -22,7 +22,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 정기배송 v.4.5")
+            st.title("🔒 엘랑비탈 정기배송 v.4.6.1")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -119,7 +119,7 @@ def init_session_state():
 init_session_state()
 
 # 4. 계산기 모드
-st.title("🏥 엘랑비탈 정기배송 v.4.5")
+st.title("🏥 엘랑비탈 정기배송 v.4.6.1")
 col1, col2 = st.columns(2)
 
 # 날짜 변경 시 캘린더 월 자동 동기화
@@ -266,28 +266,41 @@ with t5:
     st.markdown("#### 1️⃣ 원재료 투입")
     col_in1, col_in2, col_in3 = st.columns(3)
     with col_in1: in_kimchi = st.number_input("무염김치 (봉지)", 0, value=1)
-    with col_in2: in_milk_reg = st.number_input("일반커드 우유 (통)", 0, value=16)
-    with col_in3: in_milk_egg = st.number_input("계란커드 우유 (통)", 0, value=0)
+    with col_in2: 
+        in_milk_reg = st.number_input("일반커드 우유 (통)", 0, value=16)
+        starter_10 = (in_milk_reg * 2.3) * 0.1
+        starter_15 = (in_milk_reg * 2.3) * 0.15
+        st.caption(f"🥣 **필요 스타터**")
+        st.caption(f"- 마시는것/대파 (10%): {starter_10:.1f} kg")
+        st.caption(f"- 기타 (15%): {starter_15:.1f} kg")
+
+    # [수정] 계란 커드 입력창에 스타터 비율 조절 기능 추가
+    with col_in3: 
+        in_milk_egg = st.number_input("계란커드 우유 (통)", 0, value=0)
+        egg_starter_pct = st.number_input("스타터 투입비 (%)", 0, 100, 25, help="기본 25% (조절 가능)")
     
     prod_cool_cnt = in_kimchi * 215 
     prod_cool_kg = prod_cool_cnt * 0.274 
+    
     prod_reg_curd_kg = in_milk_reg * 2.3 * 0.217 
     
     total_milk_egg_kg = in_milk_egg * 2.3
     req_egg_kg = total_milk_egg_kg / 4
     req_egg_cnt = int(req_egg_kg / 0.045)
-    req_cool_for_egg = total_milk_egg_kg / 4 
     
+    # [수정] 가변 스타터 비율 적용
+    req_starter_total = total_milk_egg_kg * (egg_starter_pct / 100)
+    req_starter_daisy = req_starter_total * (8/9)
+    req_starter_acacia = req_starter_total * (1/9)
+
     prod_egg_curd_kg = total_milk_egg_kg * 0.22 
-    
-    # [수정됨] 올바른 변수명 사용
     prod_egg_curd_cnt = int(prod_egg_curd_kg * 1000 / 150)
     
     req_cool_for_curd = prod_reg_curd_kg * 5.5 
     total_mix_kg = prod_reg_curd_kg + req_cool_for_curd
     mix_cnt = int(total_mix_kg * 1000 / 260)
     
-    remain_cool_kg = prod_cool_kg - req_cool_for_curd - req_cool_for_egg
+    remain_cool_kg = prod_cool_kg - req_cool_for_curd
     remain_cool_cnt = int(remain_cool_kg * 1000 / 274)
 
     st.markdown("---")
@@ -300,14 +313,16 @@ with t5:
     with c_mid2:
         st.warning("🥣 **중간 투입 (소모)**")
         st.write(f"- 커드 혼합용: **{req_cool_for_curd:.1f} kg**")
-        st.write(f"- 계란커드용: **{req_cool_for_egg:.1f} kg**")
         st.caption(f"※ 일반커드: {prod_reg_curd_kg:.1f} kg")
     with c_mid3:
         st.success("🥚 **계란 커드 (재료 계산)**")
-        st.write(f"- 우유: **{total_milk_egg_kg:.1f} kg** ({in_milk_egg}통)")
+        st.write(f"- 우유: **{total_milk_egg_kg:.1f} kg**")
         st.write(f"- 계란: **{req_egg_kg:.1f} kg** (약 {req_egg_cnt}개)")
-        st.write(f"- 스타터: **개망초:아카시아(8:1)**")
-        st.write(f"- 시원한 것: **{req_cool_for_egg:.1f} kg** (투입됨)")
+        st.markdown("---")
+        st.write(f"🧪 **스타터 ({egg_starter_pct}%)**: **{req_starter_total:.1f} kg**")
+        st.caption(f"└ 개망초(8): {req_starter_daisy:.2f} kg")
+        st.caption(f"└ 아카시아(1): {req_starter_acacia:.2f} kg")
+        
     st.markdown("---")
     st.markdown("#### 3️⃣ 최종 완제품 (Final Count)")
     c_fin1, c_fin2, c_fin3 = st.columns(3)
@@ -328,12 +343,16 @@ with t5:
         st.metric("생산 수량 (150g)", f"{prod_egg_curd_cnt} 개")
         st.caption(f"총 {prod_egg_curd_kg:.1f} kg")
 
+# Tab 6: 연간 일정
 with t6:
     st.header(f"🗓️ 연간 생산 캘린더 ({st.session_state.view_month}월)")
+    
     sel_month = st.selectbox("월 선택", list(range(1, 13)), key="view_month")
+    
     current_sched = st.session_state.schedule_db[sel_month]
     
     st.subheader(f"📌 {current_sched['title']}")
+    
     col_main, col_note = st.columns([2, 1])
     
     with col_main:
@@ -349,7 +368,7 @@ with t6:
         
         with st.expander("➕ 일정 추가하기"):
             with st.form(f"add_sched_{sel_month}"):
-                new_task = st.text_input("내용 입력")
+                new_task = st.text_input("추가할 내용")
                 if st.form_submit_button("추가"):
                     if new_task:
                         st.session_state.schedule_db[sel_month]['main'].append(new_task)
