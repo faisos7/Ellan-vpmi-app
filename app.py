@@ -22,7 +22,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 정기배송 v.5.1")
+            st.title("🔒 엘랑비탈 정기배송 v.5.1.1")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -61,6 +61,16 @@ def init_session_state():
     # (3) 뷰 모드
     if 'view_month' not in st.session_state:
         st.session_state.view_month = st.session_state.target_date.month
+
+    # (4) [복구됨] 처방전 DB (이게 없어서 에러가 났습니다!)
+    if 'regimen_db' not in st.session_state:
+        st.session_state.regimen_db = {
+            "울산 자궁근종": """1. 아침: 장미꽃 대사체 + 생수 350ml (격일)
+2. 취침 전: 인삼 전체 대사체 + 생수 1.8L 혼합물 500ml
+3. 식사 대용: 시원한 것 1병 + 계란-우유 대사체 1/2병
+4. 생활 습관: 자궁 보온, 기상 직후 골반 스트레칭
+5. 관리: 2주 단위 초음파 검사"""
+        }
 
     if 'product_list' not in st.session_state:
         plist = [
@@ -129,10 +139,9 @@ def init_session_state():
 init_session_state()
 
 # 4. 계산기 모드
-st.title("🏥 엘랑비탈 정기배송 v.5.1")
+st.title("🏥 엘랑비탈 정기배송 v.5.1.1")
 col1, col2 = st.columns(2)
 
-# 날짜 변경 시 캘린더 월 자동 동기화
 def on_date_change():
     if 'target_date' in st.session_state:
         st.session_state.view_month = st.session_state.target_date.month
@@ -140,7 +149,6 @@ def on_date_change():
 with col1: 
     target_date = st.date_input("발송일", value=datetime.now(KST), key="target_date", on_change=on_date_change)
 
-# 날짜 기반 주차 계산
 def get_week_info(date_obj):
     month = date_obj.month
     week = (date_obj.day - 1) // 7 + 1
@@ -256,13 +264,15 @@ with t4:
         for x in items:
             if x['제품'] == "커드": curd_pure += x['수량']
             elif x['제품'] == "커드 시원한 것": curd_cool += x['수량']
+            elif x['제품'] == "계란 커드": curd_pure += x['수량'] # 계란커드도 커드로 분류
+
     need_from_cool = curd_cool * 40
     need_from_pure = curd_pure * 150
     total_kg = (need_from_cool + need_from_pure) / 1000
     milk = (total_kg / 9) * 16
     c1, c2 = st.columns(2)
     c1.metric("커드 시원한 것 (40g)", f"{curd_cool}개")
-    c2.metric("커드 (150g)", f"{curd_pure}개")
+    c2.metric("커드/계란커드 (150g)", f"{curd_pure}개")
     st.divider()
     st.info(f"🧀 **총 필요 커드:** 약 {total_kg:.2f} kg")
     st.success(f"🥛 **필요 우유:** 약 {math.ceil(milk)}통")
@@ -283,7 +293,7 @@ with t5:
     col_in1, col_in2, col_in3 = st.columns(3)
     with col_in1: in_kimchi = st.number_input("무염김치 (봉지)", 0, value=1)
     with col_in2: 
-        in_milk_reg = st.number_input("일반커드 우유 (통)", 0, value=16)
+        in_milk_reg = st.number_input("일반커드 우유 (통)", 0, value=40)
         starter_15 = (in_milk_reg * 2.3) * 0.15
         oligo_for_cool = starter_15 * 0.028 
         total_starter_input = starter_15 + oligo_for_cool
@@ -325,8 +335,8 @@ with t5:
         st.metric("총 중량", f"{prod_cool_kg:.1f} kg")
         st.caption(f"무염김치 {in_kimchi}봉 기준")
     with c_mid2:
-        st.warning("🥣 **중간 투입 (소모 시원한 것)**")
-        st.metric("소모량", f"{req_cool_for_curd:.1f} kg")
+        st.warning("🥣 **중간 투입 (소모)**")
+        st.write(f"- 커드 혼합용: **{req_cool_for_curd:.1f} kg**")
         st.caption(f"※ 일반커드: {prod_reg_curd_kg:.1f} kg")
     with c_mid3:
         st.success("🥚 **계란 커드 (재료 계산)**")
@@ -357,7 +367,6 @@ with t5:
         st.metric("생산 수량 (150g)", f"{prod_egg_curd_cnt} 개")
         st.caption(f"총 {prod_egg_curd_kg:.1f} kg")
     
-    # [v.5.0] 월간 생산 시뮬레이터 (유압기 도입)
     st.markdown("---")
     with st.expander("🗓️ **월간 생산 계획 시뮬레이터** (유압기 사용)", expanded=False):
         st.info("💡 **유압기 사용 기준:** 1회 40~60통 대량 생산 (금요일 작업)")
@@ -376,9 +385,7 @@ with t5:
         month_gen_curd = curd_yield_kg * 1
         month_egg_curd_kg = curd_yield_kg * 3
         month_egg_curd_cnt = int(month_egg_curd_kg * 1000 / 150)
-        
         gen_mix_cnt = int((month_gen_curd * 6.5) * 1000 / 260)
-        
         capacity_person = int(month_egg_curd_cnt / 30)
 
         st.markdown("---")
@@ -387,29 +394,21 @@ with t5:
             st.success("🧀 **월간 일반 커드 (1회)**")
             st.metric("총 생산량", f"{month_gen_curd:.1f} kg")
             st.caption(f"👉 커드 시원한 것 약 {gen_mix_cnt}병 생산 가능")
-            
         with c_res2:
             st.warning("🥚 **월간 계란 커드 (3회)**")
             st.metric("총 생산량", f"{month_egg_curd_cnt} 개")
             st.caption(f"총 {month_egg_curd_kg:.1f} kg")
-            
         with c_res3:
             st.error("👥 **수용 가능 인원**")
             st.metric("월간 케어", f"{capacity_person} 명")
             st.caption("1인 1일 1개 섭취 기준")
 
-# Tab 6: 연간 일정
 with t6:
     st.header(f"🗓️ 연간 생산 캘린더 ({st.session_state.view_month}월)")
-    
     sel_month = st.selectbox("월 선택", list(range(1, 13)), key="view_month")
-    
     current_sched = st.session_state.schedule_db[sel_month]
-    
     st.subheader(f"📌 {current_sched['title']}")
-    
     col_main, col_note = st.columns([2, 1])
-    
     with col_main:
         st.success("🌱 **주요 생산 품목**")
         to_remove = st.multiselect("삭제할 항목 선택", current_sched['main'])
@@ -417,10 +416,8 @@ with t6:
             for item in to_remove:
                 st.session_state.schedule_db[sel_month]['main'].remove(item)
             st.rerun()
-            
         for item in current_sched['main']:
             st.write(f"- {item}")
-        
         with st.expander("➕ 일정 추가하기"):
             with st.form(f"add_sched_{sel_month}"):
                 new_task = st.text_input("추가할 내용")
@@ -428,11 +425,9 @@ with t6:
                     if new_task:
                         st.session_state.schedule_db[sel_month]['main'].append(new_task)
                         st.rerun()
-
     with col_note:
         st.info("💡 **비고 / 주의사항**")
         st.write(current_sched['note'])
-        
         with st.expander("📝 비고 수정"):
             with st.form(f"edit_note_{sel_month}"):
                 new_note = st.text_area("내용 수정", value=current_sched['note'])
@@ -440,10 +435,9 @@ with t6:
                     st.session_state.schedule_db[sel_month]['note'] = new_note
                     st.rerun()
 
-# Tab 7: 임상/처방 관리
+# [v.5.1] Tab 7: 임상/처방 관리
 with t7:
     st.header("💊 환자별 맞춤 처방 관리")
-    
     regimen_names = list(st.session_state.regimen_db.keys())
     selected_regimen = st.selectbox("처방전 선택", regimen_names + ["(신규 처방 등록)"])
     
@@ -458,7 +452,6 @@ with t7:
     else:
         st.info(f"📋 **{selected_regimen}**")
         st.text_area("처방 내용", value=st.session_state.regimen_db[selected_regimen], height=200, disabled=True)
-        
         with st.expander("✏️ 내용 수정"):
              with st.form("edit_regimen_form"):
                 updated_content = st.text_area("내용 수정", value=st.session_state.regimen_db[selected_regimen])
