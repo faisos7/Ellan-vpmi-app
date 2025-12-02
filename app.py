@@ -25,7 +25,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 ERP v.6.2")
+            st.title("🔒 엘랑비탈 ERP v.6.3")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -158,10 +158,41 @@ def init_session_state():
 init_session_state()
 
 # 5. 메인 화면
-st.title("🏥 엘랑비탈 ERP v.6.2 (Holiday Check)")
+st.title("🏥 엘랑비탈 ERP v.6.3 (Smart Logistics)")
+
+# [v.6.3] 발송 가능 여부 판단 로직 (핵심)
+kr_holidays = holidays.KR()
+
+def check_delivery_date(date_obj):
+    # 1. 요일 체크 (월=0, ... 일=6)
+    weekday = date_obj.weekday()
+    if weekday == 4: return False, "⛔ **금요일 발송 금지:** 월요일 도착 위험 (냉장식품 변질 우려)"
+    if weekday == 5: return False, "⛔ **토요일 발송 불가:** 휴무일"
+    if weekday == 6: return False, "⛔ **일요일 발송 불가:** 휴무일"
+    
+    # 2. 당일 휴일 체크
+    if date_obj in kr_holidays:
+        return False, f"⛔ **휴일 발송 불가:** {kr_holidays.get(date_obj)}"
+    
+    # 3. 익일(도착일) 휴일 체크 (이게 중요!)
+    next_day = date_obj + timedelta(days=1)
+    if next_day in kr_holidays:
+        return False, f"⛔ **익일 휴일({kr_holidays.get(next_day)}):** 택배 하역장 방치 위험!"
+    
+    # 4. 명절(설날/추석) 3일 전 금지 체크
+    # (holidays 라이브러리의 명절 이름을 보고 판단)
+    for i in range(1, 4): # 1일후, 2일후, 3일후 체크
+        future_day = date_obj + timedelta(days=i)
+        if future_day in kr_holidays:
+            hol_name = kr_holidays.get(future_day)
+            if 'Seollal' in hol_name or 'Chuseok' in hol_name or '설날' in hol_name or '추석' in hol_name:
+                return False, f"⛔ **명절 물류 대란 예방:** {hol_name} 연휴 {i}일 전입니다."
+
+    return True, "✅ **발송 가능:** 안전한 날짜입니다."
+
 col1, col2 = st.columns(2)
 
-# 회차 계산 함수
+# 회차 계산 함수 (v.6.1.1 유지)
 def calculate_round_v4(start_date_input, current_date_input, group_type):
     try:
         if not start_date_input or str(start_date_input) == 'nan':
@@ -171,19 +202,14 @@ def calculate_round_v4(start_date_input, current_date_input, group_type):
             curr_date = current_date_input.date()
         else:
             curr_date = current_date_input
-        
         delta = (curr_date - start_date).days
         if delta < 0: return 0, start_date.strftime('%Y-%m-%d')
-        
         weeks_passed = round(delta / 7)
-        
         if group_type == "매주 발송":
             r = weeks_passed + 1
         else: 
             r = (weeks_passed // 2) + 1
-            
         return r, start_date.strftime('%Y-%m-%d')
-            
     except Exception as e:
         return 1, "오류"
 
@@ -191,21 +217,15 @@ def on_date_change():
     if 'target_date' in st.session_state:
         st.session_state.view_month = st.session_state.target_date.month
 
-# [v.6.2] 공휴일 체크 로직
-kr_holidays = holidays.KR()
-
 with col1: 
     target_date = st.date_input("발송일", value=datetime.now(KST), key="target_date", on_change=on_date_change)
     
-    # 휴일 체크
-    is_weekend = target_date.weekday() >= 5
-    is_holiday = target_date in kr_holidays
-    
-    if is_weekend or is_holiday:
-        hol_name = kr_holidays.get(target_date) if is_holiday else "주말"
-        st.error(f"🚨 **발송 주의:** 선택하신 날짜는 **{hol_name}**입니다!")
+    # [판독 결과 표시]
+    is_ok, msg = check_delivery_date(target_date)
+    if is_ok:
+        st.success(msg)
     else:
-        st.success("✅ **발송 가능:** 평일입니다.")
+        st.error(msg)
 
 def get_week_info(date_obj):
     month = date_obj.month
@@ -215,19 +235,19 @@ def get_week_info(date_obj):
 week_str = get_week_info(target_date)
 month_str = f"{target_date.month}월"
 
-# [v.6.2] 이달의 휴일 정보 표시 (우측)
+# [우측] 이달의 휴일 정보
 with col2:
-    st.info(f"📅 **{target_date.year}년 {target_date.month}월 주요 휴일**")
+    st.info(f"📅 **{target_date.year}년 {target_date.month}월 휴무일 정보**")
     month_holidays = []
     for date, name in kr_holidays.items():
         if date.year == target_date.year and date.month == target_date.month:
-            month_holidays.append(f"{date.day}일: {name}")
+            month_holidays.append(f"• {date.day}일({date.strftime('%a')}): {name}")
     
     if month_holidays:
         for h in month_holidays:
-            st.write(f"- {h}")
+            st.write(h)
     else:
-        st.write("- 이 달은 공휴일이 없습니다.")
+        st.write("• 이 달은 공휴일이 없습니다.")
 
 st.divider()
 
@@ -490,7 +510,31 @@ with t6:
     st.header(f"🗓️ 연간 생산 캘린더 ({st.session_state.view_month}월)")
     sel_month = st.selectbox("월 선택", list(range(1, 13)), key="view_month")
     current_sched = st.session_state.schedule_db[sel_month]
-    st.subheader(f"📌 {current_sched['title']}")
+    
+    with st.container(border=True):
+        st.subheader("📝 연간 주요 메모 (Yearly Memos)")
+        c_memo, c_m_tool = st.columns([2, 1])
+        with c_memo:
+            if not st.session_state.yearly_memos:
+                st.info("등록된 메모가 없습니다.")
+            else:
+                for memo in st.session_state.yearly_memos:
+                    st.warning(f"📌 {memo}")
+        with c_m_tool:
+            with st.popover("메모 관리"):
+                new_memo = st.text_input("새 메모 입력")
+                if st.button("추가", key="add_memo"):
+                    if new_memo:
+                        st.session_state.yearly_memos.append(new_memo)
+                        st.rerun()
+                del_memo = st.multiselect("삭제할 메모", st.session_state.yearly_memos)
+                if st.button("삭제", key="del_memo"):
+                    for d in del_memo:
+                        st.session_state.yearly_memos.remove(d)
+                    st.rerun()
+    st.divider()
+    
+    st.subheader(f"📅 {current_sched['title']}")
     col_main, col_note = st.columns([2, 1])
     with col_main:
         st.success("🌱 **주요 생산 품목**")
@@ -518,7 +562,6 @@ with t6:
                     st.session_state.schedule_db[sel_month]['note'] = new_note
                     st.rerun()
 
-# Tab 7: 임상/처방 관리 (기존 유지)
 with t7:
     st.header("💊 환자별 맞춤 처방 관리")
     regimen_names = list(st.session_state.regimen_db.keys())
