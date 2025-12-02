@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
 import math
-from datetime import datetime, timedelta, date, timezone
+from datetime import datetime, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
+import holidays
 
 # 1. 페이지 설정
 st.set_page_config(page_title="엘랑비탈 정기배송", page_icon="🏥", layout="wide")
@@ -24,7 +25,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 ERP v.6.1.1")
+            st.title("🔒 엘랑비탈 ERP v.6.2")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -46,14 +47,12 @@ def load_data_from_sheet():
         data = sheet.get_all_records()
         
         db = {}
-        debug_list = []
-        
         for row in data:
-            name = row.get('이름')
+            name = row['이름']
             if not name: continue
             
             items_list = []
-            raw_items = str(row.get('주문내역', '')).split(',')
+            raw_items = str(row['주문내역']).split(',')
             for item in raw_items:
                 if ':' in item:
                     p_name, p_qty = item.split(':')
@@ -65,21 +64,29 @@ def load_data_from_sheet():
                         "용량": "표준" 
                     })
             
-            # 시작일 읽기
-            start_date_raw = str(row.get('시작일', row.get('회차', ''))).strip()
-            debug_list.append({"이름": name, "시작일_원본": start_date_raw})
+            round_val = row.get('회차')
+            if round_val is None or str(round_val).strip() == "":
+                round_num = 1 
+            else:
+                try:
+                    round_num = int(str(round_val).replace('회', '').replace('주', '').strip())
+                except:
+                    round_num = 1
+
+            start_date_str = str(row.get('시작일', '')).strip()
 
             db[name] = {
-                "group": row.get('그룹', ''),
-                "note": row.get('비고', ''),
-                "default": True if str(row.get('기본발송', '')).upper() == 'O' else False,
+                "group": row['그룹'],
+                "note": row['비고'],
+                "default": True if str(row['기본발송']).upper() == 'O' else False,
                 "items": items_list,
-                "start_date_raw": start_date_raw
+                "round": round_num,
+                "start_date_raw": start_date_str
             }
-        return db, debug_list
+        return db
     except Exception as e:
         st.error(f"❌ 데이터 로딩 실패: {e}")
-        return {}, []
+        return {}
 
 # 4. 데이터 초기화
 def init_session_state():
@@ -89,28 +96,26 @@ def init_session_state():
         st.session_state.view_month = st.session_state.target_date.month
 
     if 'patient_db' not in st.session_state:
-        loaded_db, debug_info = load_data_from_sheet()
+        loaded_db = load_data_from_sheet()
         if loaded_db:
             st.session_state.patient_db = loaded_db
-            st.session_state.debug_info = debug_info
         else:
             st.session_state.patient_db = {} 
-            st.session_state.debug_info = []
 
     if 'schedule_db' not in st.session_state:
         st.session_state.schedule_db = {
             1: {"title": "1월 (JAN)", "main": ["동백꽃 (대사/필터링)", "인삼사이다 (병입)", "유기농 우유 커드"], "note": "동백꽃 pH 3.8~4.0 도달 시 종료"},
             2: {"title": "2월 (FEB)", "main": ["갈대뿌리 (채취/건조/대사)", "당근 (대사)"], "note": "갈대뿌리 세척 후 건조 수율 약 37%"},
-            3: {"title": "3월 (MAR)", "main": ["봄꽃 대사 (장미, 프리지아, 카네이션 등)", "표고버섯", "커피콩(실험)"], "note": "꽃:줄기 비율 1:1 테스트"},
-            4: {"title": "4월 (APR)", "main": ["애기똥풀 (채취 시작)", "등나무꽃", "머위", "산마늘"], "note": "애기똥풀 전초 사용"},
-            5: {"title": "5월 (MAY)", "main": ["개망초꽃+아카시아잎 합제 대사 (계란커드용 8:1)", "아카시아꽃 (대량 생산)", "뽕잎", "구찌뽕"], "note": "계란커드 스타터용 합제 대사 시작"},
-            6: {"title": "6월 (JUN)", "main": ["매실 (청 제조)", "개망초 (채취/대사)", "완두콩"], "note": "매실 씨 제거 후 으깨거나 채썰기"},
-            7: {"title": "7월 (JUL)", "main": ["토종홉 꽃 (개화/관리)", "연꽃 / 연잎", "무궁화", "목백일홍", "풋고추"], "note": "여름철 대사 속도 빠름 주의"},
-            8: {"title": "8월 (AUG)", "main": ["풋사과 (대사)", "각종 대사체 필터링/소포장"], "note": "풋사과 1:6 비율"},
-            9: {"title": "9월 (SEP)", "main": ["청귤 (대사)", "장미꽃 (가을)", "대파"], "note": "추석 선물세트 준비 기간"},
-            10: {"title": "10월 (OCT)", "main": ["송이버섯 (북한산/울진산)", "표고버섯", "산자나무(비타민열매)"], "note": "송이 등외품 활용"},
-            11: {"title": "11월 (NOV)", "main": ["무염김치 (대량 김장)", "생지황", "인삼(수삼/새싹삼)"], "note": "김치소+육수 배합 중요"},
-            12: {"title": "12월 (DEC)", "main": ["동백꽃 (채취 시작)", "메주콩(백태)", "한 해 마감"], "note": "동백꽃 1:6, 1:9, 1:12 비율 실험"}
+            3: {"title": "3월 (MAR)", "main": ["봄꽃 대사", "표고버섯"], "note": "꽃:줄기 비율 1:1 테스트"},
+            4: {"title": "4월 (APR)", "main": ["애기똥풀 (채취 시작)", "등나무꽃"], "note": "애기똥풀 전초 사용"},
+            5: {"title": "5월 (MAY)", "main": ["개망초꽃+아카시아잎 합제", "아카시아꽃", "뽕잎"], "note": "계란커드 스타터용 합제 대사 시작"},
+            6: {"title": "6월 (JUN)", "main": ["매실 (청 제조)", "개망초"], "note": "매실 씨 제거"},
+            7: {"title": "7월 (JUL)", "main": ["토종홉 꽃 (개화/관리)", "연꽃 / 연잎", "무궁화"], "note": "여름철 대사 속도 빠름 주의"},
+            8: {"title": "8월 (AUG)", "main": ["풋사과 (대사)"], "note": "풋사과 1:6 비율"},
+            9: {"title": "9월 (SEP)", "main": ["청귤", "장미꽃 (가을)"], "note": "추석 선물세트 준비"},
+            10: {"title": "10월 (OCT)", "main": ["송이버섯", "표고버섯", "산자나무"], "note": "송이 등외품 활용"},
+            11: {"title": "11월 (NOV)", "main": ["무염김치", "생지황", "인삼"], "note": "김치소+육수 배합 중요"},
+            12: {"title": "12월 (DEC)", "main": ["동백꽃", "메주콩"], "note": "한 해 마감"}
         }
 
     if 'yearly_memos' not in st.session_state:
@@ -153,44 +158,28 @@ def init_session_state():
 init_session_state()
 
 # 5. 메인 화면
-st.title("🏥 엘랑비탈 ERP v.6.1.1 (Smart Calc)")
-
-# [v.6.1] 데이터 투시경 (문제가 있을 때만 열어보세요)
-with st.expander("🔍 엑셀 데이터 원본 확인 (디버깅용)"):
-    if 'debug_info' in st.session_state and st.session_state.debug_info:
-        st.dataframe(pd.DataFrame(st.session_state.debug_info))
-    else:
-        st.caption("데이터가 없습니다.")
-
+st.title("🏥 엘랑비탈 ERP v.6.2 (Holiday Check)")
 col1, col2 = st.columns(2)
 
-# [v.6.1.1] 초강력 회차 계산기 (날짜 타입 완벽 대응)
+# 회차 계산 함수
 def calculate_round_v4(start_date_input, current_date_input, group_type):
     try:
-        # 1. 시작일이 없으면 0
         if not start_date_input or str(start_date_input) == 'nan':
             return 0, "날짜없음"
-            
-        # 2. 시작일 파싱 (문자열이든 날짜객체든 다 처리)
         start_date = pd.to_datetime(start_date_input).date()
-        
-        # 3. 현재 날짜 파싱 (여기가 중요! datetime이든 date든 다 처리)
         if isinstance(current_date_input, datetime):
             curr_date = current_date_input.date()
         else:
-            curr_date = current_date_input # 이미 date 타입인 경우
-            
-        # 4. 차이 계산
-        delta = (curr_date - start_date).days
+            curr_date = current_date_input
         
+        delta = (curr_date - start_date).days
         if delta < 0: return 0, start_date.strftime('%Y-%m-%d')
         
-        # 5. 주차 계산 (반올림)
         weeks_passed = round(delta / 7)
         
         if group_type == "매주 발송":
             r = weeks_passed + 1
-        else: # 격주 발송
+        else: 
             r = (weeks_passed // 2) + 1
             
         return r, start_date.strftime('%Y-%m-%d')
@@ -202,8 +191,21 @@ def on_date_change():
     if 'target_date' in st.session_state:
         st.session_state.view_month = st.session_state.target_date.month
 
+# [v.6.2] 공휴일 체크 로직
+kr_holidays = holidays.KR()
+
 with col1: 
     target_date = st.date_input("발송일", value=datetime.now(KST), key="target_date", on_change=on_date_change)
+    
+    # 휴일 체크
+    is_weekend = target_date.weekday() >= 5
+    is_holiday = target_date in kr_holidays
+    
+    if is_weekend or is_holiday:
+        hol_name = kr_holidays.get(target_date) if is_holiday else "주말"
+        st.error(f"🚨 **발송 주의:** 선택하신 날짜는 **{hol_name}**입니다!")
+    else:
+        st.success("✅ **발송 가능:** 평일입니다.")
 
 def get_week_info(date_obj):
     month = date_obj.month
@@ -213,13 +215,25 @@ def get_week_info(date_obj):
 week_str = get_week_info(target_date)
 month_str = f"{target_date.month}월"
 
+# [v.6.2] 이달의 휴일 정보 표시 (우측)
+with col2:
+    st.info(f"📅 **{target_date.year}년 {target_date.month}월 주요 휴일**")
+    month_holidays = []
+    for date, name in kr_holidays.items():
+        if date.year == target_date.year and date.month == target_date.month:
+            month_holidays.append(f"{date.day}일: {name}")
+    
+    if month_holidays:
+        for h in month_holidays:
+            st.write(f"- {h}")
+    else:
+        st.write("- 이 달은 공휴일이 없습니다.")
+
 st.divider()
 
 if st.button("🔄 데이터 새로고침 (구글 시트)"):
     st.cache_data.clear()
-    loaded_db, debug_info = load_data_from_sheet()
-    st.session_state.patient_db = loaded_db
-    st.session_state.debug_info = debug_info
+    st.session_state.patient_db = load_data_from_sheet()
     st.success("갱신 완료!")
     st.rerun()
 
@@ -232,7 +246,6 @@ with c1:
     if db:
         for k, v in db.items():
             if v.get('group') == "매주 발송":
-                # [계산]
                 r_num, s_date_disp = calculate_round_v4(v.get('start_date_raw'), target_date, "매주 발송")
                 
                 round_info = f" ({r_num}/12회)" 
@@ -477,31 +490,7 @@ with t6:
     st.header(f"🗓️ 연간 생산 캘린더 ({st.session_state.view_month}월)")
     sel_month = st.selectbox("월 선택", list(range(1, 13)), key="view_month")
     current_sched = st.session_state.schedule_db[sel_month]
-    
-    with st.container(border=True):
-        st.subheader("📝 연간 주요 메모 (Yearly Memos)")
-        c_memo, c_m_tool = st.columns([2, 1])
-        with c_memo:
-            if not st.session_state.yearly_memos:
-                st.info("등록된 메모가 없습니다.")
-            else:
-                for memo in st.session_state.yearly_memos:
-                    st.warning(f"📌 {memo}")
-        with c_m_tool:
-            with st.popover("메모 관리"):
-                new_memo = st.text_input("새 메모 입력")
-                if st.button("추가", key="add_memo"):
-                    if new_memo:
-                        st.session_state.yearly_memos.append(new_memo)
-                        st.rerun()
-                del_memo = st.multiselect("삭제할 메모", st.session_state.yearly_memos)
-                if st.button("삭제", key="del_memo"):
-                    for d in del_memo:
-                        st.session_state.yearly_memos.remove(d)
-                    st.rerun()
-    st.divider()
-    
-    st.subheader(f"📅 {current_sched['title']}")
+    st.subheader(f"📌 {current_sched['title']}")
     col_main, col_note = st.columns([2, 1])
     with col_main:
         st.success("🌱 **주요 생산 품목**")
