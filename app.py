@@ -26,7 +26,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 ERP v.7.3")
+            st.title("🔒 엘랑비탈 ERP v.7.4 (Safe Mode)")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -36,7 +36,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# 3. 구글 시트 데이터 로딩 및 저장 함수
+# 3. 데이터 로딩 함수들
 def get_gspread_client():
     secrets = st.secrets["gcp_service_account"]
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -50,7 +50,10 @@ def load_data_from_sheet():
         sheet = client.open("vpmi_data").sheet1
         data = sheet.get_all_records()
         
-        # 기본 용량 사전
+        # 데이터가 비어있는지 확인
+        if not data:
+            return {}, "엑셀 파일이 비어있거나 제목 줄(1행)을 읽지 못했습니다."
+
         default_caps = {
             "시원한 것": "280ml", "마시는 것": "280ml", "커드 시원한 것": "280ml",
             "인삼 사이다": "300ml", "EX": "280ml",
@@ -62,11 +65,11 @@ def load_data_from_sheet():
 
         db = {}
         for row in data:
-            name = row['이름']
+            name = row.get('이름')
             if not name: continue
             
             items_list = []
-            raw_items = str(row['주문내역']).split(',')
+            raw_items = str(row.get('주문내역', '')).split(',')
             for item in raw_items:
                 if ':' in item:
                     p_name, p_qty = item.split(':')
@@ -84,14 +87,14 @@ def load_data_from_sheet():
             start_date_str = str(row.get('시작일', '')).strip()
 
             db[name] = {
-                "group": row['그룹'], "note": row['비고'],
-                "default": True if str(row['기본발송']).upper() == 'O' else False,
+                "group": row.get('그룹', ''), 
+                "note": row.get('비고', ''),
+                "default": True if str(row.get('기본발송', '')).upper() == 'O' else False,
                 "items": items_list, "round": round_num, "start_date_raw": start_date_str
             }
-        return db
+        return db, None
     except Exception as e:
-        st.error(f"❌ 데이터 로딩 실패: {e}")
-        return {}
+        return {}, f"엑셀 연결 오류: {e}"
 
 def save_to_history(record_list):
     try:
@@ -106,14 +109,12 @@ def save_to_history(record_list):
         st.error(f"저장 실패: {e}")
         return False
 
-# [v.7.3] 생산 이력 저장 (Batch ID 포함)
 def save_production_record(record):
     try:
         client = get_gspread_client()
         try: sheet = client.open("vpmi_data").worksheet("production")
         except:
             sheet = client.open("vpmi_data").add_worksheet(title="production", rows="1000", cols="12")
-            # [헤더] 배치ID 추가, 상태 추가
             sheet.append_row(["배치ID", "생산일", "종류", "원재료", "투입량(kg)", "비율", "스타터총량", "정제수", "조성액", "올리고당", "비고", "상태"])
         sheet.append_row(record)
         return True
@@ -121,7 +122,6 @@ def save_production_record(record):
         st.error(f"생산 이력 저장 실패: {e}")
         return False
 
-# [v.7.3] pH 로그 저장 (Batch ID 포함)
 def save_ph_log(record):
     try:
         client = get_gspread_client()
@@ -135,15 +135,12 @@ def save_ph_log(record):
         st.error(f"pH 기록 저장 실패: {e}")
         return False
 
-# [v.7.3] 생산 상태 업데이트 (진행중 -> 종료)
 def update_production_status(batch_id, new_status):
     try:
         client = get_gspread_client()
         sheet = client.open("vpmi_data").worksheet("production")
-        # 배치ID가 있는 행 찾기
         cell = sheet.find(batch_id)
         if cell:
-            # 상태 컬럼(L열, 12번째) 업데이트
             sheet.update_cell(cell.row, 12, new_status)
             return True
         return False
@@ -160,17 +157,14 @@ def load_sheet_data(sheet_name):
     except:
         return pd.DataFrame()
 
-# 4. 데이터 초기화
+# 4. 데이터 초기화 (순서 중요! 고정 데이터 먼저 로드)
 def init_session_state():
     if 'target_date' not in st.session_state:
         st.session_state.target_date = datetime.now(KST)
     if 'view_month' not in st.session_state:
         st.session_state.view_month = st.session_state.target_date.month
 
-    if 'patient_db' not in st.session_state:
-        loaded_db = load_data_from_sheet()
-        st.session_state.patient_db = loaded_db if loaded_db else {}
-
+    # [안전 모드] 고정 데이터 먼저 로드 (엑셀 실패해도 앱은 켜지게)
     if 'schedule_db' not in st.session_state:
         st.session_state.schedule_db = {
             1: {"title": "1월 (JAN)", "main": ["동백꽃", "인삼사이다", "유기농 우유 커드"], "note": "동백꽃 pH 3.8~4.0 도달 시 종료"},
@@ -210,13 +204,34 @@ def init_session_state():
         st.session_state.recipe_db = r_db
     
     if 'regimen_db' not in st.session_state:
-        st.session_state.regimen_db = {"울산 자궁근종": "..."}
+        st.session_state.regimen_db = {
+            "울산 자궁근종": """1. 아침: 장미꽃 대사체 + 생수 350ml (격일)
+2. 취침 전: 인삼 전체 대사체 + 생수 1.8L 혼합물 500ml
+3. 식사 대용: 시원한 것 1병 + 계란-우유 대사체 1/2병
+4. 생활 습관: 자궁 보온, 기상 직후 골반 스트레칭
+5. 관리: 2주 단위 초음파 검사"""
+        }
+
+    # [안전 모드] 환자 DB 로드 (실패해도 앱은 켜짐)
+    if 'patient_db' not in st.session_state:
+        loaded_db, error_msg = load_data_from_sheet()
+        if loaded_db:
+            st.session_state.patient_db = loaded_db
+            st.session_state.db_error = None
+        else:
+            st.session_state.patient_db = {}
+            st.session_state.db_error = error_msg
 
 init_session_state()
 
 # 5. 메인 화면
-st.title("🏥 엘랑비탈 ERP v.7.3 (pH Integration)")
+st.title("🏥 엘랑비탈 ERP v.7.4 (Safe Mode)")
 col1, col2 = st.columns(2)
+
+# 에러 메시지 표시 (있으면)
+if 'db_error' in st.session_state and st.session_state.db_error:
+    st.error(f"⚠️ 엑셀 데이터 로딩 경고: {st.session_state.db_error}")
+    st.info("💡 엑셀 파일(vpmi_data)의 '시트 이름'과 '첫 번째 줄(제목)'을 확인해주세요.")
 
 def calculate_round_v4(start_date_input, current_date_input, group_type):
     try:
@@ -268,8 +283,11 @@ st.divider()
 
 if st.button("🔄 데이터 새로고침"):
     st.cache_data.clear()
-    st.session_state.patient_db = load_data_from_sheet()
-    st.success("갱신 완료!")
+    loaded_db, error_msg = load_data_from_sheet()
+    st.session_state.patient_db = loaded_db if loaded_db else {}
+    st.session_state.db_error = error_msg
+    if not error_msg:
+        st.success("갱신 완료!")
     st.rerun()
 
 db = st.session_state.patient_db
@@ -296,7 +314,7 @@ with c2:
                 if st.checkbox(f"{k}{info}", v.get('default'), help=f"시작: {s_date_disp}"): sel_p[k] = {'items': v['items'], 'group': v['group'], 'round': r_num}
 
 st.divider()
-t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs(["🏷️ 라벨", "🎁 장연구원", "🧪 한책임", "📊 커드 수요량", f"🏭 생산 관리 ({week_str})", f"🗓️ 연간 일정 ({month_str})", "💊 임상/처방", "📂 발송 이력", "🏭 생산/대사 관리"])
+t1, t2, t3, t4, t5, t6, t7, t8, t9, t10 = st.tabs(["🏷️ 라벨", "🎁 장연구원", "🧪 한책임", "📊 커드 수요량", f"🏭 생산 관리 ({week_str})", f"🗓️ 연간 일정 ({month_str})", "💊 임상/처방", "📂 발송 이력", "🏭 생산 이력", "🔬 대사/pH 관리"])
 
 with t1:
     c_head, c_btn = st.columns([2, 1])
@@ -330,9 +348,7 @@ with t1:
                     st.markdown("---")
                     st.write("🏥 **엘랑비탈바이오**")
 
-# Tab 2~7 생략 (기존 유지)
-
-# Tab 8
+# Tab 8: 발송 이력
 with t8:
     st.header("📂 발송 이력")
     if st.button("🔄 이력 새로고침", key="ref_hist"): st.rerun()
@@ -342,53 +358,43 @@ with t8:
         csv = hist_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 다운로드", csv, f"history_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
 
-# [v.7.3] Tab 9: 생산 및 대사 관리
+# Tab 9: 생산 및 대사 관리
 with t9:
     st.header("🏭 생산 및 대사 관리")
-    
-    # 1. 신규 생산 입력
     with st.container(border=True):
-        st.subheader("📝 신규 생산 시작 (Start)")
+        st.subheader("📝 신규 생산 시작")
         c1, c2, c3 = st.columns(3)
         p_date = c1.date_input("생산일", datetime.now(KST))
         p_type = c2.selectbox("종류", ["일반 식물 대사체", "무염김치", "커드(일반)", "계란 커드", "철원산삼", "기타"])
         p_name = c3.text_input("원재료명")
-        
         c4, c5, c6 = st.columns(3)
         p_weight = c4.number_input("원재료(kg)", 0.0, 1000.0, 1.0)
         p_ratio = c5.selectbox("비율", ["1:4", "1:6", "1:8", "1:10", "1:12"])
-        p_note = c6.text_input("비고 (특이사항)")
+        p_note = c6.text_input("비고")
         
         try: r_val = int(p_ratio.split(':')[1])
         except: r_val = 4
         total = p_weight * r_val
         st.caption(f"🧪 배합: 물 {total/106.3*100:.1f}kg, EX {total/106.3*3.5:.1f}kg, 당 {total/106.3*2.8:.1f}kg")
         
-        if st.button("💾 생산 시작 (DB저장)"):
-            # 배치ID 생성 (날짜 + 랜덤)
+        if st.button("💾 생산 시작"):
             batch_id = f"{p_date.strftime('%y%m%d')}-{p_name}-{uuid.uuid4().hex[:4]}"
             rec = [batch_id, p_date.strftime("%Y-%m-%d"), p_type, p_name, p_weight, p_ratio, f"{total:.1f}", 
                    f"{total/106.3*100:.1f}", f"{total/106.3*3.5:.1f}", f"{total/106.3*2.8:.1f}", p_note, "진행중"]
             if save_production_record(rec): st.success(f"[{batch_id}] 생산 등록 완료!")
 
     st.divider()
-
-    # 2. 대사 관리 (진행 중인 항목)
     st.subheader("🔬 대사 관리 (pH Monitoring)")
     if st.button("🔄 목록 새로고침"): st.rerun()
     
     prod_df = load_sheet_data("production")
     if not prod_df.empty:
-        # 진행 중인 것만 필터링
         ongoing_df = prod_df[prod_df['상태'] == '진행중']
-        
         if not ongoing_df.empty:
-            # 선택 박스 (배치ID + 이름)
             batch_options = ongoing_df.apply(lambda x: f"{x['배치ID']} ({x['원재료']})", axis=1).tolist()
             sel_batch_str = st.selectbox("관리할 대사체 선택", batch_options)
             sel_batch_id = sel_batch_str.split(' ')[0]
             
-            # pH 입력 폼
             with st.form("ph_input_form"):
                 st.markdown(f"**{sel_batch_str}** 의 상태를 기록합니다.")
                 c_p1, c_p2, c_p3 = st.columns(3)
@@ -399,19 +405,11 @@ with t9:
                 
                 if st.form_submit_button("기록 저장"):
                     dt_str = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
-                    # pH 로그 저장
                     save_ph_log([sel_batch_id, dt_str, ph_val, ph_temp, ph_memo])
-                    
-                    # 종료 체크 시 상태 업데이트
                     if is_finish:
-                        if update_production_status(sel_batch_id, "완료"):
-                            st.success("🎉 대사 종료 처리되었습니다!")
-                        else:
-                            st.error("상태 업데이트 실패")
-                    else:
-                        st.success("pH 기록이 저장되었습니다.")
-                        
-            # 과거 기록 차트
+                        if update_production_status(sel_batch_id, "완료"): st.success("대사 종료 처리됨!")
+                    else: st.success("기록 저장됨")
+            
             st.markdown("📉 **pH 변화 추이**")
             ph_logs = load_sheet_data("ph_logs")
             if not ph_logs.empty:
@@ -419,7 +417,13 @@ with t9:
                 if not my_logs.empty:
                     st.line_chart(my_logs.set_index('측정일시')['pH'])
                     st.dataframe(my_logs)
-        else:
-            st.info("현재 진행 중인 대사가 없습니다.")
-    else:
-        st.info("생산 기록이 없습니다.")
+        else: st.info("진행 중인 대사가 없습니다.")
+    else: st.info("생산 기록이 없습니다.")
+
+# Tab 10: pH 기록 (전체)
+with t10:
+    st.header("🔬 전체 pH 기록")
+    if st.button("🔄 pH 새로고침"): st.rerun()
+    ph_df_all = load_sheet_data("ph_logs")
+    if not ph_df_all.empty:
+        st.dataframe(ph_df_all, use_container_width=True)
