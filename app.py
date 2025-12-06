@@ -26,7 +26,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 ERP v.7.6")
+            st.title("🔒 엘랑비탈 ERP v.7.7")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -70,30 +70,22 @@ def load_data_from_sheet():
                 if ':' in item:
                     p_name, p_qty = item.split(':')
                     clean_name = p_name.strip()
-                    
                     if clean_name == "PAGI 희석액": clean_name = "인삼대사체(PAGI) 항암용"
-                    
                     cap = default_caps.get(clean_name, "")
                     items_list.append({"제품": clean_name, "수량": int(p_qty.strip()), "용량": cap})
             
             round_val = row.get('회차')
-            if round_val is None or str(round_val).strip() == "": 
-                round_num = 1 
+            if round_val is None or str(round_val).strip() == "": round_num = 1 
             else:
-                try: 
-                    round_num = int(str(round_val).replace('회', '').replace('주', '').strip())
-                except: 
-                    round_num = 1
+                try: round_num = int(str(round_val).replace('회', '').replace('주', '').strip())
+                except: round_num = 1
 
             start_date_str = str(row.get('시작일', '')).strip()
 
             db[name] = {
-                "group": row.get('그룹', ''), 
-                "note": row.get('비고', ''),
+                "group": row.get('그룹', ''), "note": row.get('비고', ''),
                 "default": True if str(row.get('기본발송', '')).upper() == 'O' else False,
-                "items": items_list,
-                "round": round_num,
-                "start_date_raw": start_date_str
+                "items": items_list, "round": round_num, "start_date_raw": start_date_str
             }
         return db
     except Exception as e:
@@ -228,7 +220,7 @@ def init_session_state():
 init_session_state()
 
 # 5. 메인 화면
-st.title("🏥 엘랑비탈 ERP v.7.6 (Simple Record)")
+st.title("🏥 엘랑비탈 ERP v.7.7 (Factory Default)")
 col1, col2 = st.columns(2)
 
 def calculate_round_v4(start_date_input, current_date_input, group_type):
@@ -312,7 +304,7 @@ with c2:
 st.divider()
 t1, t2, t3, t4, t5, t6, t7, t8, t9, t10 = st.tabs(["🏷️ 라벨", "🎁 장연구원", "🧪 한책임", "📊 커드 수요량", f"🏭 생산 관리 ({week_str})", f"🗓️ 연간 일정 ({month_str})", "💊 임상/처방", "📂 발송 이력", "🏭 생산 이력", "🔬 대사/pH 관리"])
 
-# Tab 1: 라벨
+# Tab 1~4 (기존 유지)
 with t1:
     c_head, c_btn = st.columns([2, 1])
     with c_head: st.header("🖨️ 라벨 출력")
@@ -345,7 +337,6 @@ with t1:
                     st.markdown("---")
                     st.write("🏥 **엘랑비탈바이오**")
 
-# Tab 2~7 (기존 유지)
 with t2:
     st.header("🎁 장연구원 (개별 포장)")
     tot = {}
@@ -423,39 +414,64 @@ with t4:
     st.info(f"🧀 **총 필요 커드:** 약 {total_kg:.2f} kg")
     st.success(f"🥛 **필요 우유:** 약 {math.ceil(milk)}통")
 
+# [v.7.7] Tab 5: 생산 관리 (기본값 & 하이브리드 스타터 적용)
 with t5:
     st.header(f"🏭 생산 관리 ({week_str})")
     st.markdown("---")
     st.markdown("#### 1️⃣ 원재료 투입")
     col_in1, col_in2, col_in3 = st.columns(3)
-    with col_in1: in_kimchi = st.number_input("무염김치 (봉지)", 0, value=1)
+    
+    # [수정] 기본값 3봉
+    with col_in1: in_kimchi = st.number_input("무염김치 (봉지)", 0, value=3)
+    
+    # [수정] 기본값 30통
     with col_in2: 
-        in_milk_reg = st.number_input("일반커드 우유 (통)", 0, value=40)
+        in_milk_reg = st.number_input("일반커드 우유 (통)", 0, value=30)
         starter_15 = (in_milk_reg * 2.3) * 0.15
         oligo_for_cool = starter_15 * 0.028 
         total_starter_input = starter_15 + oligo_for_cool
         st.caption(f"🥣 **필요 스타터**")
         st.caption(f"- 냉동 시원한것 (15%):")
         st.caption(f"  └ 원액 {starter_15:.1f}kg + 올리고당 {oligo_for_cool:.3f}kg")
+
     with col_in3: 
         in_milk_egg = st.number_input("계란커드 우유 (통)", 0, value=0)
-        egg_starter_pct = st.number_input("(개망초/아카시아) 스타터 투입비 (%)", 0, 100, 25)
+        
+        # [신규] 하이브리드 스타터 비율 입력
+        st.markdown("👇 **스타터 비율 설정 (합계 25% 권장)**")
+        c_s1, c_s2 = st.columns(2)
+        daisy_pct = c_s1.number_input("개망초/아카시아 (%)", 0, 100, 20)
+        cool_pct = c_s2.number_input("시원한/마시는것 (%)", 0, 100, 5)
     
+    # 계산 로직
     prod_cool_cnt = in_kimchi * 215 
     prod_cool_kg = prod_cool_cnt * 0.274 
+    
     prod_reg_curd_kg = in_milk_reg * 2.3 * 0.217 
-    total_milk_egg_kg = in_milk_egg * 2.3
-    req_egg_kg = total_milk_egg_kg / 4
-    req_egg_cnt = int(req_egg_kg / 0.045)
-    req_starter_total = total_milk_egg_kg * (egg_starter_pct / 100)
-    req_starter_daisy = req_starter_total * (8/9)
-    req_starter_acacia = req_starter_total * (1/9)
-    prod_egg_curd_kg = total_milk_egg_kg * 0.22 
+    
+    # [v.7.7] 계란커드 정밀 계산 (우유+계란 무게 기준)
+    milk_weight = in_milk_egg * 2.3
+    egg_weight = milk_weight / 4
+    total_base_weight = milk_weight + egg_weight
+    req_egg_cnt = int(egg_weight / 0.045)
+    
+    # 스타터 계산
+    starter_daisy_mix_kg = total_base_weight * (daisy_pct / 100)
+    starter_cool_kg = total_base_weight * (cool_pct / 100)
+    
+    # 개망초(8):아카시아(1) 분해
+    req_daisy = starter_daisy_mix_kg * (8/9)
+    req_acacia = starter_daisy_mix_kg * (1/9)
+
+    prod_egg_curd_kg = milk_weight * 0.22 
     prod_egg_curd_cnt = int(prod_egg_curd_kg * 1000 / 150)
+    
     req_cool_for_curd = prod_reg_curd_kg * 5.5 
     total_mix_kg = prod_reg_curd_kg + req_cool_for_curd
     mix_cnt = int(total_mix_kg * 1000 / 260)
-    remain_cool_kg = prod_cool_kg - req_cool_for_curd
+    
+    # 시원한것 소모량 (일반커드용 + 계란커드용)
+    remain_cool_kg = prod_cool_kg - req_cool_for_curd - starter_cool_kg
     remain_cool_cnt = int(remain_cool_kg * 1000 / 274)
 
     st.markdown("---")
@@ -467,16 +483,21 @@ with t5:
         st.caption(f"무염김치 {in_kimchi}봉 기준")
     with c_mid2:
         st.warning("🥣 **중간 투입 (소모 시원한 것)**")
-        st.metric("소모량", f"{req_cool_for_curd:.1f} kg")
-        st.caption(f"※ 일반커드: {prod_reg_curd_kg:.1f} kg")
+        total_consumed = req_cool_for_curd + starter_cool_kg
+        st.metric("총 소모량", f"{total_consumed:.1f} kg")
+        st.caption(f"└ 일반커드용: {req_cool_for_curd:.1f} kg")
+        st.caption(f"└ 계란커드용: {starter_cool_kg:.1f} kg")
     with c_mid3:
         st.success("🥚 **계란 커드 (재료 계산)**")
-        st.write(f"- 우유: **{total_milk_egg_kg:.1f} kg**")
-        st.write(f"- 계란: **{req_egg_kg:.1f} kg** (약 {req_egg_cnt}개)")
+        st.write(f"- 우유: **{milk_weight:.1f} kg**")
+        st.write(f"- 계란: **{egg_weight:.1f} kg** (약 {req_egg_cnt}개)")
         st.markdown("---")
-        st.write(f"🧪 **스타터 ({egg_starter_pct}%)**: **{req_starter_total:.1f} kg**")
-        st.caption(f"└ 개망초(8): {req_starter_daisy:.2f} kg")
-        st.caption(f"└ 아카시아(1): {req_starter_acacia:.2f} kg")
+        st.write(f"🧪 **스타터 ({daisy_pct + cool_pct}%) 상세**")
+        st.caption(f"1. 개망초/아카시아 ({daisy_pct}%): **{starter_daisy_mix_kg:.1f} kg**")
+        st.caption(f"   └ 개망초: {req_daisy:.2f} kg")
+        st.caption(f"   └ 아카시아: {req_acacia:.2f} kg")
+        st.caption(f"2. 시원한/마시는것 ({cool_pct}%): **{starter_cool_kg:.1f} kg**")
+        
     st.markdown("---")
     st.markdown("#### 3️⃣ 최종 완제품 (Final Count)")
     c_fin1, c_fin2, c_fin3 = st.columns(3)
@@ -529,7 +550,7 @@ with t5:
             st.metric("월간 케어", f"{capacity_person} 명")
             st.caption("1인 1일 1개 섭취 기준")
 
-# Tab 6: 연간 일정
+# Tab 6~10 (기존 유지)
 with t6:
     st.header(f"🗓️ 연간 생산 캘린더 ({st.session_state.view_month}월)")
     sel_month = st.selectbox("월 선택", list(range(1, 13)), key="view_month")
@@ -586,7 +607,6 @@ with t6:
                     st.session_state.schedule_db[sel_month]['note'] = new_note
                     st.rerun()
 
-# Tab 7: 임상/처방
 with t7:
     st.header("💊 환자별 맞춤 처방 관리")
     regimen_names = list(st.session_state.regimen_db.keys())
@@ -609,7 +629,6 @@ with t7:
                     st.session_state.regimen_db[selected_regimen] = updated_content
                     st.rerun()
 
-# Tab 8: 발송 이력
 with t8:
     st.header("📂 발송 이력")
     if st.button("🔄 이력 새로고침", key="ref_hist"): st.rerun()
@@ -619,7 +638,6 @@ with t8:
         csv = hist_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button("📥 다운로드", csv, f"history_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
 
-# Tab 9: 생산 이력
 with t9:
     st.header("🏭 생산 이력")
     with st.container(border=True):
@@ -635,15 +653,37 @@ with t9:
         p_ratio = c5.selectbox("배합 비율", ["저염김치(배추10:속6)", "1:4", "1:6", "1:8", "1:10", "1:12", "기타"])
         p_note = c6.text_input("비고 (특이사항, pH 등)")
 
-        # [v.7.6] 단순화된 생산 기록 (레시피 계산 제거)
+        if p_type == "저염김치(0.3%)":
+            st.info(f"🥬 **저염김치 배합 시뮬레이션 (배추 {p_weight}kg 기준)**")
+            ratio = p_weight / 100 
+            rc1, rc2, rc3 = st.columns(3)
+            with rc1:
+                st.markdown("**1. 육수 & 죽**")
+                st.write(f"- 물: {20*ratio:.1f}kg")
+                st.write(f"- 찹쌀죽: {16*ratio:.1f}kg (가루 {1.5*ratio:.2f}kg)")
+                st.write(f"- 육수재료: 무, 양파, 배, 대파, 멸치 등")
+            with rc2:
+                st.markdown("**2. 김치소 양념**")
+                st.write(f"- 마늘: {4*ratio:.1f}kg, 생강: {0.7*ratio:.2f}kg")
+                st.write(f"- 고춧가루: {9*ratio:.1f}kg (고운1+굵은8)")
+                st.write(f"- 젓갈: 새우젓 {1.5*ratio:.1f}kg, 액젓 {2.5*ratio:.1f}kg")
+            with rc3:
+                st.markdown("**3. 핵심 소재**")
+                st.write(f"- **조성액(VPMI-CM): {7.6*ratio:.2f}kg**")
+                st.write(f"- 원당: {2.2*ratio:.1f}kg")
+                st.write(f"- 이소말토/프락토: 각 {0.8*ratio:.1f}kg")
+                st.success(f"👉 **총 김치소 예상: {60*ratio:.1f}kg**")
+        else:
+            try: r_val = int(p_ratio.split(':')[1])
+            except: r_val = 4
+            total = p_weight * r_val
+            st.caption(f"🧪 일반 대사체 배합: 물 {total/106.3*100:.1f}kg, EX {total/106.3*3.5:.1f}kg, 당 {total/106.3*2.8:.1f}kg")
+
         if st.button("💾 생산 기록 저장"):
             batch_id = f"{p_date.strftime('%y%m%d')}-{p_name}-{uuid.uuid4().hex[:4]}"
-            
-            # 김치류는 상세 계산 없이 저장, 일반 대사체는 기존 방식 유지 또는 단순화
             if "김치" in p_type:
                  rec = [batch_id, p_date.strftime("%Y-%m-%d"), p_type, p_name, p_weight, p_ratio, "-", "-", "-", "-", p_note, "진행중"]
             else:
-                # 일반 대사체 계산 (필요시 유지)
                 try: r_val = int(p_ratio.split(':')[1])
                 except: r_val = 4
                 total = p_weight * r_val
@@ -658,7 +698,6 @@ with t9:
     if not prod_df.empty:
         st.dataframe(prod_df, use_container_width=True)
 
-# Tab 10: pH 관리
 with t10:
     st.header("🔬 대사 관리 및 pH 측정")
     with st.container(border=True):
