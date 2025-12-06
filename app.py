@@ -27,7 +27,7 @@ def check_password():
     if not st.session_state.authenticated:
         c1, c2, c3 = st.columns([1,2,1])
         with c2:
-            st.title("🔒 엘랑비탈 ERP v.8.4")
+            st.title("🔒 엘랑비탈 ERP v.0.8.4")
             with st.form("login"):
                 st.text_input("비밀번호:", type="password", key="password")
                 st.form_submit_button("로그인", on_click=password_entered)
@@ -106,13 +106,15 @@ def save_to_history(record_list):
         st.error(f"저장 실패: {e}")
         return False
 
+# [v.0.8.4] 컬럼 순서 변경: 투입량, 비율, 완성, 폐기, 비고, 상태
 def save_production_record(record):
     try:
         client = get_gspread_client()
         try: sheet = client.open("vpmi_data").worksheet("production")
         except:
             sheet = client.open("vpmi_data").add_worksheet(title="production", rows="1000", cols="10")
-            sheet.append_row(["배치ID", "생산일", "종류", "원재료", "투입량(kg)", "비율", "비고", "상태", "완성(개)", "폐기(병)"])
+            # 헤더 순서 변경
+            sheet.append_row(["배치ID", "생산일", "종류", "원재료", "투입량(kg)", "비율", "완성(개)", "폐기(병)", "비고", "상태"])
         sheet.append_row(record)
         return True
     except Exception as e:
@@ -132,7 +134,7 @@ def save_ph_log(record):
         st.error(f"pH 기록 저장 실패: {e}")
         return False
 
-# [v.8.4] 누적 업데이트 함수 (핵심 로직 변경)
+# [v.0.8.4] 업데이트 함수 (컬럼 인덱스 변경 반영)
 def update_production_status(batch_id, new_status, add_done=0, add_fail=0):
     try:
         client = get_gspread_client()
@@ -140,34 +142,28 @@ def update_production_status(batch_id, new_status, add_done=0, add_fail=0):
         cell = sheet.find(batch_id)
         
         if cell:
-            # 1. 상태(JSON) 업데이트
-            sheet.update_cell(cell.row, 8, new_status)
+            # 10번째 열: 상태 (Status)
+            sheet.update_cell(cell.row, 10, new_status)
             
-            # 2. 완성 수량 누적 (기존 값 읽어와서 더하기)
+            # 7번째 열: 완성(개) - 누적
             if add_done > 0:
-                current_done = sheet.cell(cell.row, 9).value
-                try: 
-                    current_done = int(current_done)
-                except: 
-                    current_done = 0 # 숫자가 아니거나 비어있으면 0 취급
+                current_done = sheet.cell(cell.row, 7).value
+                try: current_done = int(current_done)
+                except: current_done = 0
+                sheet.update_cell(cell.row, 7, current_done + add_done)
                 
-                sheet.update_cell(cell.row, 9, current_done + add_done)
-                
-                # 비고란에 히스토리 기록 (옵션)
-                current_note = sheet.cell(cell.row, 7).value
+                # 9번째 열: 비고(Note)에 로그 추가
+                current_note = sheet.cell(cell.row, 9).value
                 log_msg = f"[{datetime.now(KST).strftime('%m/%d')}]+{add_done}"
                 new_note = f"{current_note}, {log_msg}" if current_note else log_msg
-                sheet.update_cell(cell.row, 7, new_note)
+                sheet.update_cell(cell.row, 9, new_note)
             
-            # 3. 폐기 수량 누적
+            # 8번째 열: 폐기(병) - 누적
             if add_fail > 0:
-                current_fail = sheet.cell(cell.row, 10).value
-                try: 
-                    current_fail = int(current_fail)
-                except: 
-                    current_fail = 0
-                
-                sheet.update_cell(cell.row, 10, current_fail + add_fail)
+                current_fail = sheet.cell(cell.row, 8).value
+                try: current_fail = int(current_fail)
+                except: current_fail = 0
+                sheet.update_cell(cell.row, 8, current_fail + add_fail)
                 
             return True
         return False
@@ -267,7 +263,7 @@ init_session_state()
 st.sidebar.title("📌 메뉴 선택")
 app_mode = st.sidebar.radio("작업 모드를 선택하세요", ["🚛 배송/주문 관리", "🏭 생산/공정 관리"])
 
-st.title(f"🏥 엘랑비탈 ERP v.8.4 ({app_mode})")
+st.title(f"🏥 엘랑비탈 ERP v.0.8.4 ({app_mode})")
 
 def calculate_round_v4(start_date_input, current_date_input, group_type):
     try:
@@ -292,7 +288,7 @@ def check_delivery_date(date_obj):
     return True, "✅ **발송 가능**"
 
 # ==============================================================================
-# [MODE 1] 배송/주문 관리 (Delivery Mode)
+# [MODE 1] 배송/주문 관리
 # ==============================================================================
 if app_mode == "🚛 배송/주문 관리":
     col1, col2 = st.columns(2)
@@ -471,7 +467,7 @@ elif app_mode == "🏭 생산/공정 관리":
     
     t5, t6, t7, t8, t9, t10 = st.tabs(["🧀 커드 생산 관리", f"🗓️ 연간 일정", "💊 임상/처방", "📂 발송 이력", "🏭 기타 생산 이력", "🔬 대사/pH 관리"])
 
-    # Tab 5: 커드 생산 관리 (누적 업데이트 적용)
+    # Tab 5: 커드 생산 관리
     with t5:
         st.header(f"🧀 커드 생산 관리")
         
@@ -519,8 +515,9 @@ elif app_mode == "🏭 생산/공정 관리":
                 status_json = json.dumps({"total": jars_count, "meta": jars_count, "sep": 0, "fail": 0, "done": 0})
                 batch_id = f"{datetime.now(KST).strftime('%y%m%d')}-{target_product}-{uuid.uuid4().hex[:4]}"
                 
-                # 기록: 완성/폐기 초기값은 0, 나중에 누적됨
-                rec = [batch_id, datetime.now(KST).strftime("%Y-%m-%d"), target_product, "우유+스타터", f"{milk_kg:.1f}", ratio_str, "커드생산", status_json, 0, 0]
+                # [v.0.8.4] 컬럼 순서 변경 반영
+                # ["배치ID", "생산일", "종류", "원재료", "투입량(kg)", "비율", "완성(개)", "폐기(병)", "비고", "상태"]
+                rec = [batch_id, datetime.now(KST).strftime("%Y-%m-%d"), target_product, "우유+스타터", f"{milk_kg:.1f}", ratio_str, 0, 0, "커드생산", status_json]
                 
                 if save_production_record(rec):
                     st.cache_data.clear()
@@ -582,19 +579,16 @@ elif app_mode == "🏭 생산/공정 관리":
                                     updated = True
                                 
                                 if updated:
-                                    # [v.8.4] 누적 업데이트 적용 (완성품, 폐기병)
-                                    # fail_cnt는 이번에 폐기된 병의 수 -> 누적됨
                                     update_production_status(row['배치ID'], json.dumps(status), final_prod_cnt, fail_cnt)
                                     st.cache_data.clear()
                                     st.success("상태가 업데이트되고 생산량이 누적되었습니다!")
                                     st.rerun()
 
-    # Tab 6~10 (기존 유지 - 전체 코드 복사 시 포함)
+    # Tab 6~8 (기존 유지)
     with t6:
         st.header(f"🗓️ 연간 생산 캘린더")
         sel_month = st.selectbox("월 선택", list(range(1, 13)), index=datetime.now(KST).month-1)
         current_sched = st.session_state.schedule_db[sel_month]
-        
         with st.container(border=True):
             st.subheader("📝 연간 주요 메모")
             c_memo, c_m_tool = st.columns([2, 1])
@@ -645,6 +639,7 @@ elif app_mode == "🏭 생산/공정 관리":
             csv = hist_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button("📥 다운로드", csv, f"history.csv", "text/csv")
 
+    # Tab 9: 기타 생산 이력 (컬럼 순서 반영)
     with t9:
         st.header("🏭 기타 생산 이력")
         with st.container(border=True):
@@ -674,13 +669,18 @@ elif app_mode == "🏭 생산/공정 관리":
 
             if st.button("💾 생산 기록 저장", key="btn_save_prod"):
                 batch_id = f"{p_date.strftime('%y%m%d')}-{p_name}-{uuid.uuid4().hex[:4]}"
-                rec = [batch_id, p_date.strftime("%Y-%m-%d"), p_type, p_name, p_weight, p_ratio, p_note, "진행중", "-", "-"]
-                if save_production_record(rec): st.success("저장 완료!")
+                # [v.0.8.4] ["배치ID", "생산일", "종류", "원재료", "투입량(kg)", "비율", "완성(개)", "폐기(병)", "비고", "상태"]
+                rec = [batch_id, p_date.strftime("%Y-%m-%d"), p_type, p_name, p_weight, p_ratio, 0, 0, p_note, "진행중"]
+                if save_production_record(rec): 
+                    st.cache_data.clear()
+                    st.success("저장 완료!")
+                    st.rerun()
 
         if st.button("🔄 이력 새로고침"): st.rerun()
         prod_df = load_sheet_data("production")
         if not prod_df.empty: st.dataframe(prod_df, use_container_width=True)
 
+    # Tab 10: 대사/pH 관리
     with t10:
         st.header("🔬 대사 관리 및 pH 측정")
         with st.container(border=True):
